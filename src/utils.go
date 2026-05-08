@@ -1,6 +1,6 @@
 package main
 
-func limiter(value float32, maxValue float32) float32 {
+func limiter(value float64, maxValue float64) float64 {
 	result := value / maxValue
 
 	if result > 1.0 {
