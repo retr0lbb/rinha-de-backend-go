@@ -1,6 +1,9 @@
 package main
 
 func limiter(value float64, maxValue float64) float64 {
+	if value == 0 || maxValue == 0 {
+		return 0
+	}
 	result := value / maxValue
 
 	if result > 1.0 {
