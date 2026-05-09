@@ -9,6 +9,11 @@ import (
 
 func main() {
 	mux := http.NewServeMux()
+	err := loadMCCscores("files/mcc_risk.json")
+
+	if err != nil {
+		log.Fatalf("Erro ao carregar MCC scores: %v", err)
+	}
 
 	mux.HandleFunc("/ready", handleReady)
 	mux.HandleFunc("POST /fraud-score", handleAnalyze)

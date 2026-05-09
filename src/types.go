@@ -44,3 +44,8 @@ type ResponsePayload struct {
 	Approved   bool    `json:"approved"`
 	FraudScore float32 `json:"fraud_score"`
 }
+
+type MerchantScore struct {
+	ID    string  `json:"id"`
+	Score float32 `json:"score"`
+}

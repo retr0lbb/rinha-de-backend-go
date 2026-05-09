@@ -1,11 +1,30 @@
 package main
 
 import (
+	"encoding/json"
+	"os"
 	"slices"
 	"time"
 )
 
+// mudar para melhor performance depois
 const TimeFormat = time.RFC3339
+
+var MCCScores map[string]float32
+
+func loadMCCscores(path string) error {
+	file, err := os.Open(path)
+
+	if err != nil {
+		return err
+	}
+
+	defer file.Close()
+
+	decoder := json.NewDecoder(file)
+
+	return decoder.Decode(&MCCScores)
+}
 
 func HandleVectorizePayload(payload Payload) [14]float32 {
 	const (
@@ -94,8 +113,13 @@ func HandleVectorizePayload(payload Payload) [14]float32 {
 		vetor[11] = 1
 	}
 
-	// 12
-	vetor[12] = 0.5
+	score, ok := MCCScores[payload.Merchant.MCC]
+	if !ok {
+		score = 0.5 // Valor padrão se não encontrar o MCC
+	}
+
+	// 12 merchant score
+	vetor[12] = score
 
 	// 13
 	vetor[13] = float32(limiter(
