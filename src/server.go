@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 )
@@ -10,6 +9,8 @@ import (
 func main() {
 	mux := http.NewServeMux()
 	err := loadMCCscores("files/mcc_risk.json")
+	openLargeFile("files/references.json.gz")
+	log.Println("Dataset carregado com sucesso!")
 
 	if err != nil {
 		log.Fatalf("Erro ao carregar MCC scores: %v", err)
@@ -18,7 +19,8 @@ func main() {
 	mux.HandleFunc("/ready", handleReady)
 	mux.HandleFunc("POST /fraud-score", handleAnalyze)
 
-	log.Fatal(http.ListenAndServe(":9999", mux))
+	print("Server ready...")
+	log.Fatal(http.ListenAndServe("127.0.0.1:9999", mux))
 }
 
 func handleReady(w http.ResponseWriter, r *http.Request) {
@@ -36,11 +38,11 @@ func handleAnalyze(w http.ResponseWriter, r *http.Request) {
 	//handler
 	vector := HandleVectorizePayload(req)
 
-	fmt.Println(vector)
+	score, approved := search(vector)
 
 	res := ResponsePayload{
-		Approved:   true,
-		FraudScore: 1.0,
+		Approved:   approved,
+		FraudScore: score,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
