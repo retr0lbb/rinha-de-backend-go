@@ -9,14 +9,24 @@ import (
 )
 
 var (
-	VectorDataset []float32
+	VectorDataset []uint8
 	Labels        []uint8
 )
 
-const VectorSize = 14
+const (
+	VectorSize    = 14
+	ExpectedRows  = 3000000
+	QuantizeScale = 255.0
+)
 
 func openLargeFile(path string) {
-	f, _ := os.Open(path)
+	f, err := os.Open(path)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer f.Close()
 
 	gzReader, err := gzip.NewReader(f)
 
@@ -32,20 +42,31 @@ func openLargeFile(path string) {
 		log.Fatal(err)
 	}
 
-	VectorDataset = make([]float32, 0, 3000000*VectorSize)
-	Labels = make([]uint8, 0, 3000000)
+	VectorDataset = make([]uint8, 0, ExpectedRows*VectorSize)
+	Labels = make([]uint8, 0, ExpectedRows)
 
 	for decoder.More() {
 		var row struct {
-			Vector []float32 `json:"vector"`
-			Label  string    `json:"label"`
+			Vector [14]float32 `json:"vector"`
+			Label  string      `json:"label"`
 		}
 
 		if err := decoder.Decode(&row); err != nil {
 			continue
 		}
 
-		VectorDataset = append(VectorDataset, row.Vector...)
+		for _, v := range row.Vector {
+			if v < 0 {
+				v = 0
+			}
+
+			if v > 1 {
+				v = 1
+			}
+
+			VectorDataset = append(VectorDataset, uint8(v*QuantizeScale))
+		}
+
 		if row.Label == "fraud" {
 			Labels = append(Labels, 1)
 		} else {
@@ -72,12 +93,17 @@ func search(vector [14]float32) (float32, bool) {
 		return 0.0, false
 	}
 
-	for i := range totalRegistros {
-		offset := i * VectorSize
+	for i := 0; i < totalRegistros; i++ {
+		offset := i * 14
 		var dist float32
 
-		for j := range 14 {
-			diff := vector[j] - VectorDataset[offset+j]
+		for j := 0; j < 14; j++ {
+
+			dbValue := float32(
+				VectorDataset[offset+j],
+			) / QuantizeScale
+
+			diff := vector[j] - dbValue
 
 			dist += diff * diff
 		}
@@ -87,14 +113,14 @@ func search(vector [14]float32) (float32, bool) {
 		}
 	}
 
-	var count uint8
+	var fraudCount uint8
 	for _, l := range topLabels {
-		count += l
+		fraudCount += l
 	}
 
-	precision := float32(count) / 5.0
+	precision := float32(fraudCount) / 5.0
 
-	return precision, count >= 3
+	return precision, fraudCount >= 3
 }
 
 func insertDislocated(topVectors *[5]float32, labels *[5]uint8, d float32, l uint8) {

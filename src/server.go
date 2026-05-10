@@ -18,9 +18,7 @@ func main() {
 
 	mux.HandleFunc("/ready", handleReady)
 	mux.HandleFunc("POST /fraud-score", handleAnalyze)
-
-	print("Server ready...")
-	log.Fatal(http.ListenAndServe("127.0.0.1:9999", mux))
+	log.Fatal(http.ListenAndServe(":9999", mux))
 }
 
 func handleReady(w http.ResponseWriter, r *http.Request) {

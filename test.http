@@ -1,6 +1,3 @@
-GET http://localhost:9999
-
-###
 
 GET http://localhost:9999/ready
 
@@ -11,7 +8,7 @@ Content-Type: application/json
 {
     "id": "tx-3576980410",
     "transaction": {
-      "amount": 384.88,
+      "amount": 10.88,
       "installments": 3,
       "requested_at": "2026-03-11T20:23:35Z"
     },
@@ -19,20 +16,17 @@ Content-Type: application/json
       "avg_amount": 769.76,
       "tx_count_24h": 3,
       "known_merchants": [
-        "MERC-009",
-        "MERC-009",
-        "MERC-001",
-        "MERC-001"
+        "MERC-009"
       ]
     },
     "merchant": {
       "id": "MERC-001",
       "mcc": "5912",
-      "avg_amount": 298.95
+      "avg_amount": 2300.95
     },
     "terminal": {
-      "is_online": false,
-      "card_present": true,
+      "is_online": true,
+      "card_present": false,
       "km_from_home": 13.7090520965
     },
     "last_transaction": {
