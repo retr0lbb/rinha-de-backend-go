@@ -68,11 +68,11 @@ func search(vector [14]uint8) (float32, bool) {
 		offset := i * 14
 		var dist uint16
 
-		for j := 0; j < 14; j++ {
+		for j := range 14 {
 
-			dbValue := VectorDataset[j+offset] //uint8
+			dbValue := VectorDataset[j+offset]
 
-			if vector[i] == 255 || dbValue == 255 {
+			if vector[j] == 255 || dbValue == 255 {
 				continue
 			}
 
@@ -91,8 +91,8 @@ func search(vector [14]uint8) (float32, bool) {
 		fraudCount += l
 	}
 
-	fmt.Print("contagem de fraude: ", fraudCount, "/n")
-	fmt.Print("top vetores relacionados: ", topVectors, "/n")
+	fmt.Print("contagem de fraude: ", fraudCount, "\n")
+	fmt.Print("top vetores relacionados: ", topVectors, "\n")
 
 	precision := float32(fraudCount) / 5.0
 
