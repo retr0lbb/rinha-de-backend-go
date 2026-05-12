@@ -23,3 +23,5 @@ agora chegando na parte principal, a busca vetorial, de comeco eu pensei em faze
 agora eu estou fazendo uma busca vetorial simples usando o quadrado das distancias, sem nenhuma otimizacao muito grande, eu aloquei 3 milhoes de arrays com dados simples float32 e fiz o parsing de forma gradual.
 
 porem devido a limitacao de memoria, essa estrategia se tornou incapaz de se enquadrar nos limites, estou pensando em uma nova solucao, basicamente pre-processar os vetores para que eles sejam bytes. ou talvez criar algum algoritimo para transformar vetores de 14 dimensoes em vetores de dimensoes menores podendo ocupar menos dados em memoria.
+
+apliquei algoritimos de quantizacao eficientes para floats em integers garantindo uma reducao de 450mb para apenas 40 mb aproximadamente 10x de eficiencia
