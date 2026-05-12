@@ -1,8 +1,6 @@
 package main
 
 import (
-	"compress/gzip"
-	"encoding/json"
 	"log"
 	"math"
 	"os"
@@ -11,73 +9,45 @@ import (
 var (
 	VectorDataset []uint8
 	Labels        []uint8
+	TotalVectors  uint32
 )
 
-const (
-	VectorSize    = 14
-	ExpectedRows  = 3000000
-	QuantizeScale = 255.0
-)
+const VectorSize = 14
 
-func openLargeFile(path string) {
-	f, err := os.Open(path)
+func openLargeFile(vectorFilePath string, labelFilePath string) {
+	var err error
+
+	VectorDataset, err = os.ReadFile(vectorFilePath)
 
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	defer f.Close()
-
-	gzReader, err := gzip.NewReader(f)
+	Labels, err = os.ReadFile(labelFilePath)
 
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	defer gzReader.Close()
+	TotalVectors = uint32(len(VectorDataset) / VectorSize)
 
-	decoder := json.NewDecoder(gzReader)
+	log.Printf(
+		"dataset carregado: %d vetores",
+		TotalVectors,
+	)
 
-	if _, err := decoder.Token(); err != nil {
-		log.Fatal(err)
-	}
+	log.Printf(
+		"memoria vetores: %.2f MB",
+		float64(len(VectorDataset))/(1024*1024),
+	)
 
-	VectorDataset = make([]uint8, 0, ExpectedRows*VectorSize)
-	Labels = make([]uint8, 0, ExpectedRows)
-
-	for decoder.More() {
-		var row struct {
-			Vector [14]float32 `json:"vector"`
-			Label  string      `json:"label"`
-		}
-
-		if err := decoder.Decode(&row); err != nil {
-			continue
-		}
-
-		for _, v := range row.Vector {
-			if v < 0 {
-				v = 0
-			}
-
-			if v > 1 {
-				v = 1
-			}
-
-			VectorDataset = append(VectorDataset, uint8(v*QuantizeScale))
-		}
-
-		if row.Label == "fraud" {
-			Labels = append(Labels, 1)
-		} else {
-			Labels = append(Labels, 0)
-		}
-
-	}
-
+	log.Printf(
+		"memoria labels: %.2f MB",
+		float64(len(Labels))/(1024*1024),
+	)
 }
 
-// i will implement a simple KNN search
+// i will implement a simple KNN search i changed from float32 to uint8 so it can be more memory efficient
 func search(vector [14]float32) (float32, bool) {
 	var topVectors [5]float32
 	var topLabels [5]uint8
@@ -87,23 +57,25 @@ func search(vector [14]float32) (float32, bool) {
 		topLabels[i] = 255
 	}
 
-	totalRegistros := len(Labels)
-
-	if totalRegistros == 0 {
+	if TotalVectors == 0 {
 		return 0.0, false
 	}
 
-	for i := 0; i < totalRegistros; i++ {
+	for i := 0; i < int(TotalVectors); i++ {
 		offset := i * 14
 		var dist float32
 
 		for j := 0; j < 14; j++ {
 
-			dbValue := float32(
-				VectorDataset[offset+j],
-			) / QuantizeScale
+			dbValue := VectorDataset[j+offset]
 
-			diff := vector[j] - dbValue
+			convertedBackValueFromVector := float32(dbValue) / 254.0
+
+			if convertedBackValueFromVector == 255 {
+				continue
+			}
+
+			diff := vector[j] - convertedBackValueFromVector
 
 			dist += diff * diff
 		}

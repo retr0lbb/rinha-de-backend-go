@@ -9,7 +9,7 @@ import (
 func main() {
 	mux := http.NewServeMux()
 	err := loadMCCscores("files/mcc_risk.json")
-	openLargeFile("files/references.json.gz")
+	openLargeFile("files/vectors.bin", "files/labels.bin")
 	log.Println("Dataset carregado com sucesso!")
 
 	if err != nil {
