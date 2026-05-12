@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+	"rinha-de-backend-retr0lbb/utils"
 )
 
 // for processing the files
@@ -55,7 +56,7 @@ func main() {
 		var quantized [14]byte
 
 		for i, v := range row.Vector {
-			quantized[i] = quantize(v)
+			quantized[i] = utils.Quantize(v)
 		}
 
 		vecFiles.Write(quantized[:])

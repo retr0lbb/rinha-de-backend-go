@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"rinha-de-backend-retr0lbb/utils"
 	"slices"
 	"time"
 )
@@ -26,7 +27,7 @@ func loadMCCscores(path string) error {
 	return decoder.Decode(&MCCScores)
 }
 
-func HandleVectorizePayload(payload Payload) [14]float32 {
+func HandleVectorizePayload(payload Payload) [14]uint8 {
 	const (
 		MaxAmount            = 10000
 		MaxInstallments      = 12
@@ -37,16 +38,16 @@ func HandleVectorizePayload(payload Payload) [14]float32 {
 		MaxMerchantAvgAmount = 10000
 	)
 
-	var vetor [14]float32
+	var vetor [14]uint8
 
 	// 0 & 1: Transação básica
-	vetor[0] = float32(limiter(payload.Transaction.Amount, MaxAmount))
-	vetor[1] = float32(limiter(float64(payload.Transaction.Installments), float64(MaxInstallments)))
+	vetor[0] = utils.Quantize(float32(limiter(payload.Transaction.Amount, MaxAmount)))
+	vetor[1] = utils.Quantize(float32(limiter(float64(payload.Transaction.Installments), float64(MaxInstallments))))
 
 	// 2: Razão vs Média do Cliente
 	if payload.Customer.AvgAmount > 0 {
 		ratio := payload.Transaction.Amount / payload.Customer.AvgAmount
-		vetor[2] = float32(limiter(ratio, float64(AmountVsAvgRatio)))
+		vetor[2] = utils.Quantize(float32(limiter(ratio, float64(AmountVsAvgRatio))))
 	}
 
 	// 3 & 4: Tempo
@@ -54,14 +55,14 @@ func HandleVectorizePayload(payload Payload) [14]float32 {
 	if err == nil {
 		t = t.UTC()
 
-		vetor[3] = float32(t.Hour()) / 23.0
-		vetor[4] = float32(t.Weekday()) / 6.0
+		vetor[3] = utils.Quantize(float32(t.Hour()) / 23.0)
+		vetor[4] = utils.Quantize(float32(t.Weekday()) / 6.0)
 	}
 
 	// 5 & 6: Última transação
 	if payload.LastTransaction == nil {
-		vetor[5] = -1
-		vetor[6] = -1
+		vetor[5] = utils.Quantize(-1)
+		vetor[6] = utils.Quantize(-1)
 	} else {
 		lastT, err := time.Parse(
 			time.RFC3339,
@@ -71,28 +72,28 @@ func HandleVectorizePayload(payload Payload) [14]float32 {
 		if err == nil {
 			diff := t.Sub(lastT).Minutes()
 
-			vetor[5] = float32(limiter(
+			vetor[5] = utils.Quantize(float32(limiter(
 				float64(diff),
 				float64(MaxMinutes),
-			))
+			)))
 		}
 
-		vetor[6] = float32(limiter(
+		vetor[6] = utils.Quantize(float32(limiter(
 			float64(payload.LastTransaction.KmFromCurrent),
 			float64(MaxKm),
-		))
+		)))
 	}
 
 	// 7 & 8
-	vetor[7] = float32(limiter(
+	vetor[7] = utils.Quantize(float32(limiter(
 		float64(payload.Terminal.KmFromHome),
 		float64(MaxKm),
-	))
+	)))
 
-	vetor[8] = float32(limiter(
+	vetor[8] = utils.Quantize(float32(limiter(
 		float64(payload.Customer.TxCount24h),
 		float64(MaxTxCount24h),
-	))
+	)))
 
 	// 9 & 10
 	if payload.Terminal.IsOnline {
@@ -119,13 +120,13 @@ func HandleVectorizePayload(payload Payload) [14]float32 {
 	}
 
 	// 12 merchant score
-	vetor[12] = score
+	vetor[12] = utils.Quantize(score)
 
 	// 13
-	vetor[13] = float32(limiter(
+	vetor[13] = utils.Quantize(float32(limiter(
 		payload.Merchant.AvgAmount,
 		float64(MaxMerchantAvgAmount),
-	))
+	)))
 
 	return vetor
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"math"
 	"os"
@@ -48,12 +49,14 @@ func openLargeFile(vectorFilePath string, labelFilePath string) {
 }
 
 // i will implement a simple KNN search i changed from float32 to uint8 so it can be more memory efficient
-func search(vector [14]float32) (float32, bool) {
-	var topVectors [5]float32
+// usando o mesmo payload tem que dar 0.4 false
+func search(vector [14]uint8) (float32, bool) {
+	fmt.Print(vector)
+	var topVectors [5]uint16
 	var topLabels [5]uint8
 
 	for i := range topVectors {
-		topVectors[i] = math.MaxFloat32
+		topVectors[i] = math.MaxInt16
 		topLabels[i] = 255
 	}
 
@@ -63,21 +66,19 @@ func search(vector [14]float32) (float32, bool) {
 
 	for i := 0; i < int(TotalVectors); i++ {
 		offset := i * 14
-		var dist float32
+		var dist uint16
 
 		for j := 0; j < 14; j++ {
 
-			dbValue := VectorDataset[j+offset]
+			dbValue := VectorDataset[j+offset] //uint8
 
-			convertedBackValueFromVector := float32(dbValue) / 254.0
-
-			if convertedBackValueFromVector == 255 {
+			if vector[i] == 255 || dbValue == 255 {
 				continue
 			}
 
-			diff := vector[j] - convertedBackValueFromVector
+			diff := vector[j] - dbValue
 
-			dist += diff * diff
+			dist += uint16(diff * diff)
 		}
 
 		if dist < topVectors[4] {
@@ -90,12 +91,15 @@ func search(vector [14]float32) (float32, bool) {
 		fraudCount += l
 	}
 
+	fmt.Print("contagem de fraude: ", fraudCount, "/n")
+	fmt.Print("top vetores relacionados: ", topVectors, "/n")
+
 	precision := float32(fraudCount) / 5.0
 
 	return precision, fraudCount >= 3
 }
 
-func insertDislocated(topVectors *[5]float32, labels *[5]uint8, d float32, l uint8) {
+func insertDislocated(topVectors *[5]uint16, labels *[5]uint8, d uint16, l uint8) {
 	for i := 0; i < 5; i++ {
 		if d < topVectors[i] {
 			for j := 4; j > i; j-- {
