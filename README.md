@@ -29,3 +29,5 @@ apliquei algoritimos de quantizacao eficientes para floats em integers garantind
 correcao de quantizacao e penalidades por dimensoes ausentes de -1 em 255 bytes de memoria, 
 
 correcao de underflow de unsigned integers em uint8 para uint16.
+
+tentei adicionar um bucket search mas n foi muito eficaz na busca, vou colocar o codigo pra teste e ver minha pontuacao 
