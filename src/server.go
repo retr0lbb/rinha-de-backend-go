@@ -9,13 +9,18 @@ import (
 func main() {
 	mux := http.NewServeMux()
 	err := loadMCCscores("files/mcc_risk.json")
-	openLargeFile("files/vectors.bin", "files/labels.bin")
-
-	log.Println("Dataset carregado com sucesso!")
 
 	if err != nil {
 		log.Fatalf("Erro ao carregar MCC scores: %v", err)
 	}
+
+	err = openLargeFile("files/vectors.bin", "files/labels.bin")
+
+	if err != nil {
+		log.Fatalf("Erro ao carregar arquivos bin")
+	}
+
+	log.Println("Dataset carregado com sucesso!")
 
 	mux.HandleFunc("/ready", handleReady)
 	mux.HandleFunc("/fraud-score", handleAnalyze)

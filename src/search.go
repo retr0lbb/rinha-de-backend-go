@@ -4,29 +4,41 @@ import (
 	"log"
 	"math"
 	"os"
+
+	mmap "github.com/edsrzf/mmap-go"
 )
 
 var (
-	VectorDataset []uint8
-	Labels        []uint8
+	VectorDataset mmap.MMap
+	Labels        mmap.MMap
 	TotalVectors  uint32
 )
 
 const VectorSize = 14
 
-func openLargeFile(vectorFilePath string, labelFilePath string) {
+func openLargeFile(vectorFilePath string, labelFilePath string) error {
 	var err error
 
-	VectorDataset, err = os.ReadFile(vectorFilePath)
+	vectorfile, err := os.Open(vectorFilePath)
 
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
-	Labels, err = os.ReadFile(labelFilePath)
+	VectorDataset, err = mmap.Map(vectorfile, mmap.RDONLY, 0)
 
 	if err != nil {
-		log.Fatal(err)
+		return err
+	}
+
+	labelFile, err := os.Open(labelFilePath)
+	if err != nil {
+		return err
+	}
+
+	Labels, err = mmap.Map(labelFile, mmap.RDONLY, 0)
+	if err != nil {
+		return err
 	}
 
 	TotalVectors = uint32(len(VectorDataset) / VectorSize)
@@ -45,6 +57,8 @@ func openLargeFile(vectorFilePath string, labelFilePath string) {
 		"memoria labels: %.2f MB",
 		float64(len(Labels))/(1024*1024),
 	)
+
+	return nil
 }
 
 // i will implement a simple KNN search i changed from float32 to uint8 so it can be more memory efficient
@@ -63,15 +77,15 @@ func search(vector [14]uint8) (float32, bool) {
 	}
 
 	for i := 0; i < int(TotalVectors); i++ {
-		offset := i * 14
+		offset := i * VectorSize
 		var dist uint32
 
-		for j := range 14 {
+		for j := range VectorSize {
 
 			dbValue := VectorDataset[j+offset]
 
 			if vector[j] == 255 || dbValue == 255 {
-				dist += 255 * 255
+				dist += uint32(255 * 255)
 				continue
 			}
 
