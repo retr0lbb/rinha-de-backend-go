@@ -10,6 +10,7 @@ func main() {
 	mux := http.NewServeMux()
 	err := loadMCCscores("files/mcc_risk.json")
 	openLargeFile("files/vectors.bin", "files/labels.bin")
+
 	log.Println("Dataset carregado com sucesso!")
 
 	if err != nil {
@@ -17,8 +18,8 @@ func main() {
 	}
 
 	mux.HandleFunc("/ready", handleReady)
-	mux.HandleFunc("POST /fraud-score", handleAnalyze)
-	log.Fatal(http.ListenAndServe("localhost:9999", mux))
+	mux.HandleFunc("/fraud-score", handleAnalyze)
+	log.Fatal(http.ListenAndServe(":9999", mux))
 }
 
 func handleReady(w http.ResponseWriter, r *http.Request) {
@@ -26,6 +27,11 @@ func handleReady(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleAnalyze(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
 	var req Payload
 	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
@@ -44,7 +50,7 @@ func handleAnalyze(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
+	w.WriteHeader(http.StatusOK)
 
 	json.NewEncoder(w).Encode(res)
 }
