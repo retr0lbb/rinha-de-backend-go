@@ -1,0 +1,7 @@
+{
+    "participants": ["Henrique Barbosa"],
+    "social": ["https://github.com/retr0lbb", "https://www.linkedin.com/in/henrique-barbosa-sampaio/"],
+    "source-code-repo": "https://github.com/retr0lbb/rinha-de-backend-go",
+    "stack": ["go", "nginx"],
+    "open_to_work": true
+}
