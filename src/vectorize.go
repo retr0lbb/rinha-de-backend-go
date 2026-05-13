@@ -59,7 +59,7 @@ func HandleVectorizePayload(payload Payload) [14]uint8 {
 		vetor[4] = utils.Quantize(float32(t.Weekday()) / 6.0)
 	}
 
-	// 5 & 6: Última transação
+	// 5 & 6: Última transação APENAS ESSES QUE TEM O -1
 	if payload.LastTransaction == nil {
 		vetor[5] = utils.Quantize(-1)
 		vetor[6] = utils.Quantize(-1)
@@ -97,11 +97,11 @@ func HandleVectorizePayload(payload Payload) [14]uint8 {
 
 	// 9 & 10
 	if payload.Terminal.IsOnline {
-		vetor[9] = 1
+		vetor[9] = utils.Quantize(1)
 	}
 
 	if payload.Terminal.CardPresent {
-		vetor[10] = 1
+		vetor[10] = utils.Quantize(1)
 	}
 
 	// 11
@@ -111,12 +111,12 @@ func HandleVectorizePayload(payload Payload) [14]uint8 {
 	)
 
 	if !isKnown {
-		vetor[11] = 1
+		vetor[11] = utils.Quantize(1)
 	}
 
 	score, ok := MCCScores[payload.Merchant.MCC]
 	if !ok {
-		score = 0.5 // Valor padrão se não encontrar o MCC
+		score = 0.5
 	}
 
 	// 12 merchant score
