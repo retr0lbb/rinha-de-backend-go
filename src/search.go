@@ -86,7 +86,15 @@ func search(vector [14]uint8) (float32, bool) {
 		bucketID |= 1
 	}
 
-	SearchKDTree(KDTrees[bucketID], vector, &topVectors, &topLabels)
+	var minBaseDist uint32
+	if vector[5] == 255 {
+		minBaseDist += uint32(255 * 255)
+	}
+	if vector[6] == 255 {
+		minBaseDist += uint32(255 * 255)
+	}
+
+	SearchKDTree(KDTrees[bucketID], vector, &topVectors, &topLabels, minBaseDist)
 
 	var fraudCount uint8
 	for _, l := range topLabels {

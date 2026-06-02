@@ -103,7 +103,7 @@ func buildFlatTree(indices []uint32, depth int) uint32 {
 	return nodeIdx
 }
 
-func SearchKDTree(nodeIdx uint32, query [14]uint8, topVectors *[5]uint32, topLabels *[5]uint8) {
+func SearchKDTree(nodeIdx uint32, query [14]uint8, topVectors *[5]uint32, topLabels *[5]uint8, minBaseDist uint32) {
 	if nodeIdx == math.MaxUint32 {
 		return
 	}
@@ -119,7 +119,7 @@ func SearchKDTree(nodeIdx uint32, query [14]uint8, topVectors *[5]uint32, topLab
 		dist += uint32(diff * diff)
 	}
 
-	if dist < worstDist {
+	if dist+minBaseDist < worstDist {
 		// Dimensions 5-6 (sentinel 255)
 		for j := uint32(5); j < 7; j++ {
 			if query[j] == 255 || VectorDataset[offset+j] == 255 {
@@ -155,7 +155,7 @@ func SearchKDTree(nodeIdx uint32, query [14]uint8, topVectors *[5]uint32, topLab
 		second = node.Left
 	}
 
-	SearchKDTree(first, query, topVectors, topLabels)
+	SearchKDTree(first, query, topVectors, topLabels, minBaseDist)
 
 	var axisDist uint32
 	if (node.SplitDim == 5 || node.SplitDim == 6) && (query[node.SplitDim] == 255 || node.SplitVal == 255) {
@@ -164,7 +164,14 @@ func SearchKDTree(nodeIdx uint32, query [14]uint8, topVectors *[5]uint32, topLab
 		axisDist = uint32(diff * diff)
 	}
 
-	if axisDist < topVectors[4] {
-		SearchKDTree(second, query, topVectors, topLabels)
+	totalMinDist := axisDist + minBaseDist
+	if node.SplitDim == 5 && query[5] == 255 {
+		totalMinDist -= uint32(255 * 255)
+	} else if node.SplitDim == 6 && query[6] == 255 {
+		totalMinDist -= uint32(255 * 255)
+	}
+
+	if totalMinDist < topVectors[4] {
+		SearchKDTree(second, query, topVectors, topLabels, minBaseDist)
 	}
 }
