@@ -1,13 +1,13 @@
 services:
   api1:
-    image: retr0lbb/rinha-backend-2026:latest  # sem build: .
+    image: retr0lbb/rinha-de-backend-retr0lbb-api2:latest  # sem build: .
     container_name: api1
     hostname: api1
     mem_limit: 140m
     cpus: "0.45"
 
   api2:
-    image: retr0lbb/rinha-backend-2026:latest  # sem build: .
+    image: retr0lbb/rinha-de-backend-retr0lbb-api2:latest  # sem build: .
     container_name: api2
     hostname: api2
     mem_limit: 140m
