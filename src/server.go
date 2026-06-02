@@ -20,6 +20,13 @@ func main() {
 		log.Fatalf("Erro ao carregar arquivos bin")
 	}
 
+	err = loadBuckets("files/buckets.bin")
+	if err != nil {
+		log.Fatalf("Erro ao carregar buckets: %v", err)
+	}
+
+	BuildKDTrees()
+
 	log.Println("Dataset carregado com sucesso!")
 
 	mux.HandleFunc("/ready", handleReady)

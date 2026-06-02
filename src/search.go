@@ -61,8 +61,6 @@ func openLargeFile(vectorFilePath string, labelFilePath string) error {
 	return nil
 }
 
-// i will implement a simple KNN search i changed from float32 to uint8 so it can be more memory efficient
-// usando o mesmo payload tem que dar 0.4 true
 func search(vector [14]uint8) (float32, bool) {
 	var topVectors [5]uint32
 	var topLabels [5]uint8
@@ -76,28 +74,19 @@ func search(vector [14]uint8) (float32, bool) {
 		return 0.0, false
 	}
 
-	for i := 0; i < int(TotalVectors); i++ {
-		offset := i * VectorSize
-		var dist uint32
-
-		for j := range VectorSize {
-
-			dbValue := VectorDataset[j+offset]
-
-			if vector[j] == 255 || dbValue == 255 {
-				dist += uint32(255 * 255)
-				continue
-			}
-
-			diff := int16(vector[j]) - int16(dbValue)
-
-			dist += uint32(diff * diff)
-		}
-
-		if dist < topVectors[4] {
-			insertDislocated(&topVectors, &topLabels, dist, Labels[i])
-		}
+	// Calculate bucket ID
+	bucketID := 0
+	if vector[9] != 0 {
+		bucketID |= 4
 	}
+	if vector[10] != 0 {
+		bucketID |= 2
+	}
+	if vector[11] != 0 {
+		bucketID |= 1
+	}
+
+	SearchKDTree(KDTrees[bucketID], vector, &topVectors, &topLabels)
 
 	var fraudCount uint8
 	for _, l := range topLabels {
