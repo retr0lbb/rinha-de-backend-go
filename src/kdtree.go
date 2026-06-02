@@ -19,12 +19,12 @@ type KDNode struct {
 	Right     uint32
 	SplitDim  uint8
 	SplitVal  uint8
-	_         uint16 // padding
+	_         uint16
 }
 
 var Buckets [8]BucketInfo
 var KDTreeNodes []KDNode
-var KDTrees [8]uint32 // Root indices
+var KDTrees [8]uint32
 
 func loadBuckets(bucketFilePath string) error {
 	file, err := os.Open(bucketFilePath)
@@ -114,7 +114,7 @@ func SearchKDTree(nodeIdx uint32, query [14]uint8, topVectors *[5]uint32, topLab
 	var dist uint32
 
 	// Dimensions 0-4 (no sentinels)
-	for j := uint32(0); j < 5; j++ {
+	for j := range uint32(5) {
 		diff := int16(query[j]) - int16(VectorDataset[offset+j])
 		dist += uint32(diff * diff)
 	}
