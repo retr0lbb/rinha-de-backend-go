@@ -17,7 +17,7 @@ const NumBuckets = 16
 // Controla o trade-off latência × precisão.
 // Valores menores = mais rápido, menos preciso.
 // Valores maiores = mais lento, mais preciso.
-const MaxKDVisited = 500
+const MaxKDVisited = 1500
 
 type BucketInfo struct {
 	Offset uint32

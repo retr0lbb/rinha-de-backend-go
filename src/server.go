@@ -10,14 +10,16 @@ import (
 )
 
 // searchSem limita o número de buscas KD-Tree concorrentes.
-// Com GOMAXPROCS=1 e 0.45 CPU, mais de 16 buscas simultâneas
-// causa thrashing sem ganho de throughput.
-var searchSem = make(chan struct{}, 16)
+// Capacidade maior evita que o canal encha e force rejeições desnecessárias.
+// O select não-bloqueante retorna 503 imediatamente se estiver cheio,
+// em vez de deixar o handler preso enquanto o clock de timeout do cliente corre.
+var searchSem = make(chan struct{}, 64)
 
 func main() {
-	// Com cgroup de 0.45 CPU, usar mais de 1 thread OS causa context-switch
-	// overhead sem ganho real. GOMAXPROCS=1 elimina thrashing.
-	runtime.GOMAXPROCS(1)
+	// GOMAXPROCS padrão: permite que I/O (aceitação de conexões, JSON) e
+	// CPU (busca KD-Tree) se sobreponham em goroutines separadas.
+	// O cgroup de 0.45 CPU limita o total de CPU consumida de qualquer forma.
+	runtime.GOMAXPROCS(2)
 
 	mux := http.NewServeMux()
 
@@ -51,7 +53,7 @@ func main() {
 		Addr:              ":9999",
 		Handler:           mux,
 		ReadTimeout:       2 * time.Second,
-		WriteTimeout:      3 * time.Second,
+		WriteTimeout:      5 * time.Second,
 		IdleTimeout:       30 * time.Second,
 		ReadHeaderTimeout: 500 * time.Millisecond,
 	}
@@ -77,9 +79,15 @@ func handleAnalyze(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Limitar concorrência: aguarda slot disponível no semáforo
-	searchSem <- struct{}{}
-	defer func() { <-searchSem }()
+	// Semáforo não-bloqueante: se o sistema está saturado, rejeita com 503
+	// imediatamente em vez de bloquear o handler (o que causaria timeouts silenciosos).
+	select {
+	case searchSem <- struct{}{}:
+		defer func() { <-searchSem }()
+	default:
+		http.Error(w, "service busy", http.StatusServiceUnavailable)
+		return
+	}
 
 	vector := HandleVectorizePayload(req)
 	score, approved := search(vector)
