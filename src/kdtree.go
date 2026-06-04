@@ -8,6 +8,17 @@ import (
 	"sort"
 )
 
+// NumBuckets define o número de partições do dataset.
+// Deve coincidir com o valor em process.go.
+// 16 buckets baseados no amount quantizado (vector[0] >> 4).
+const NumBuckets = 16
+
+// MaxKDVisited é o limite de nós visitados por busca na KD-Tree.
+// Controla o trade-off latência × precisão.
+// Valores menores = mais rápido, menos preciso.
+// Valores maiores = mais lento, mais preciso.
+const MaxKDVisited = 500
+
 type BucketInfo struct {
 	Offset uint32
 	Count  uint32
@@ -22,9 +33,9 @@ type KDNode struct {
 	_         uint16
 }
 
-var Buckets [8]BucketInfo
+var Buckets [NumBuckets]BucketInfo
 var KDTreeNodes []KDNode
-var KDTrees [8]uint32
+var KDTrees [NumBuckets]uint32
 
 func loadBuckets(bucketFilePath string) error {
 	file, err := os.Open(bucketFilePath)
@@ -33,7 +44,7 @@ func loadBuckets(bucketFilePath string) error {
 	}
 	defer file.Close()
 
-	for i := 0; i < 8; i++ {
+	for i := 0; i < NumBuckets; i++ {
 		err = binary.Read(file, binary.LittleEndian, &Buckets[i].Offset)
 		if err != nil {
 			return err
@@ -44,13 +55,26 @@ func loadBuckets(bucketFilePath string) error {
 		}
 	}
 
-	log.Println("Buckets loaded successfully")
+	log.Println("Buckets carregados com sucesso")
 	return nil
 }
 
 func BuildKDTrees() {
 	KDTreeNodes = make([]KDNode, 0, TotalVectors)
-	for i := 0; i < 8; i++ {
+
+	// Log de diagnóstico: distribuição real dos buckets no runtime
+	log.Println("=== Distribuição dos Buckets (runtime) ===")
+	for i := 0; i < NumBuckets; i++ {
+		pct := 0.0
+		if TotalVectors > 0 {
+			pct = float64(Buckets[i].Count) / float64(TotalVectors) * 100
+		}
+		log.Printf("  Bucket %2d (amount_q %3d–%3d): %7d vetores (%.1f%%)",
+			i, i*16, i*16+15, Buckets[i].Count, pct)
+	}
+	log.Println("==========================================")
+
+	for i := 0; i < NumBuckets; i++ {
 		count := Buckets[i].Count
 		offset := Buckets[i].Offset
 		if count == 0 {
@@ -65,7 +89,7 @@ func BuildKDTrees() {
 
 		KDTrees[i] = buildFlatTree(indices, 0)
 	}
-	log.Println("KD-Trees built successfully")
+	log.Println("KD-Trees construídas com sucesso")
 }
 
 func buildFlatTree(indices []uint32, depth int) uint32 {
@@ -103,24 +127,28 @@ func buildFlatTree(indices []uint32, depth int) uint32 {
 	return nodeIdx
 }
 
-func SearchKDTree(nodeIdx uint32, query [14]uint8, topVectors *[5]uint32, topLabels *[5]uint8, minBaseDist uint32) {
-	if nodeIdx == math.MaxUint32 {
+// SearchKDTree realiza busca k-NN na KD-Tree com poda por distância.
+// O parâmetro visited controla o limite de nós visitados (MaxKDVisited),
+// garantindo latência previsível mesmo em buckets grandes.
+func SearchKDTree(nodeIdx uint32, query [14]uint8, topVectors *[5]uint32, topLabels *[5]uint8, minBaseDist uint32, visited *int) {
+	if nodeIdx == math.MaxUint32 || *visited >= MaxKDVisited {
 		return
 	}
+	*visited++
 
 	node := &KDTreeNodes[nodeIdx]
 	offset := node.VectorIdx * VectorSize
 	worstDist := topVectors[4]
 	var dist uint32
 
-	// Dimensions 0-4 (no sentinels)
+	// Dimensões 0–4 (sem sentinelas)
 	for j := range uint32(5) {
 		diff := int16(query[j]) - int16(VectorDataset[offset+j])
 		dist += uint32(diff * diff)
 	}
 
 	if dist+minBaseDist < worstDist {
-		// Dimensions 5-6 (sentinel 255)
+		// Dimensões 5–6 (sentinela 255 = dado ausente)
 		for j := uint32(5); j < 7; j++ {
 			if query[j] == 255 || VectorDataset[offset+j] == 255 {
 				dist += uint32(255 * 255)
@@ -131,7 +159,7 @@ func SearchKDTree(nodeIdx uint32, query [14]uint8, topVectors *[5]uint32, topLab
 		}
 
 		if dist < worstDist {
-			// Dimensions 7-13 (no sentinels)
+			// Dimensões 7–13 (sem sentinelas)
 			for j := uint32(7); j < 14; j++ {
 				diff := int16(query[j]) - int16(VectorDataset[offset+j])
 				dist += uint32(diff * diff)
@@ -155,7 +183,7 @@ func SearchKDTree(nodeIdx uint32, query [14]uint8, topVectors *[5]uint32, topLab
 		second = node.Left
 	}
 
-	SearchKDTree(first, query, topVectors, topLabels, minBaseDist)
+	SearchKDTree(first, query, topVectors, topLabels, minBaseDist, visited)
 
 	var axisDist uint32
 	if (node.SplitDim == 5 || node.SplitDim == 6) && (query[node.SplitDim] == 255 || node.SplitVal == 255) {
@@ -172,6 +200,6 @@ func SearchKDTree(nodeIdx uint32, query [14]uint8, topVectors *[5]uint32, topLab
 	}
 
 	if totalMinDist < topVectors[4] {
-		SearchKDTree(second, query, topVectors, topLabels, minBaseDist)
+		SearchKDTree(second, query, topVectors, topLabels, minBaseDist, visited)
 	}
 }

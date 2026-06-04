@@ -4,6 +4,7 @@ import (
 	"log"
 	"math"
 	"os"
+	"sync/atomic"
 
 	mmap "github.com/edsrzf/mmap-go"
 )
@@ -14,19 +15,24 @@ var (
 	TotalVectors  uint32
 )
 
+// Contadores atômicos para diagnóstico sem custo em produção
+var (
+	totalSearches  atomic.Int64
+	totalVisited   atomic.Int64
+	cappedSearches atomic.Int64 // buscas que atingiram MaxKDVisited
+)
+
 const VectorSize = 14
 
 func openLargeFile(vectorFilePath string, labelFilePath string) error {
 	var err error
 
 	vectorfile, err := os.Open(vectorFilePath)
-
 	if err != nil {
 		return err
 	}
 
 	VectorDataset, err = mmap.Map(vectorfile, mmap.RDONLY, 0)
-
 	if err != nil {
 		return err
 	}
@@ -43,20 +49,9 @@ func openLargeFile(vectorFilePath string, labelFilePath string) error {
 
 	TotalVectors = uint32(len(VectorDataset) / VectorSize)
 
-	log.Printf(
-		"dataset carregado: %d vetores",
-		TotalVectors,
-	)
-
-	log.Printf(
-		"memoria vetores: %.2f MB",
-		float64(len(VectorDataset))/(1024*1024),
-	)
-
-	log.Printf(
-		"memoria labels: %.2f MB",
-		float64(len(Labels))/(1024*1024),
-	)
+	log.Printf("dataset carregado: %d vetores", TotalVectors)
+	log.Printf("memoria vetores: %.2f MB", float64(len(VectorDataset))/(1024*1024))
+	log.Printf("memoria labels:  %.2f MB", float64(len(Labels))/(1024*1024))
 
 	return nil
 }
@@ -74,17 +69,9 @@ func search(vector [14]uint8) (float32, bool) {
 		return 0.0, false
 	}
 
-	// Calculate bucket ID
-	bucketID := 0
-	if vector[9] != 0 {
-		bucketID |= 4
-	}
-	if vector[10] != 0 {
-		bucketID |= 2
-	}
-	if vector[11] != 0 {
-		bucketID |= 1
-	}
+	// Bucket baseado no valor da transação quantizado.
+	// Deve ser idêntico ao cálculo em process.go.
+	bucketID := int(vector[0]) >> 4
 
 	var minBaseDist uint32
 	if vector[5] == 255 {
@@ -94,7 +81,15 @@ func search(vector [14]uint8) (float32, bool) {
 		minBaseDist += uint32(255 * 255)
 	}
 
-	SearchKDTree(KDTrees[bucketID], vector, &topVectors, &topLabels, minBaseDist)
+	visited := 0
+	SearchKDTree(KDTrees[bucketID], vector, &topVectors, &topLabels, minBaseDist, &visited)
+
+	// Atualiza contadores atômicos de diagnóstico
+	totalSearches.Add(1)
+	totalVisited.Add(int64(visited))
+	if visited >= MaxKDVisited {
+		cappedSearches.Add(1)
+	}
 
 	var fraudCount uint8
 	for _, l := range topLabels {

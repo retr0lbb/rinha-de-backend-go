@@ -9,6 +9,9 @@ import (
 	"rinha-de-backend-retr0lbb/utils"
 )
 
+// NumBuckets deve coincidir com o valor em src/kdtree.go
+const NumBuckets = 16
+
 type Row struct {
 	Vector [14]byte
 	Label  byte
@@ -33,7 +36,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	var buckets [8][]Row
+	var buckets [NumBuckets][]Row
 
 	for decoder.More() {
 		var row struct {
@@ -56,20 +59,31 @@ func main() {
 			r.Label = 0
 		}
 
-		// Calculate bucket ID
-		bucketID := 0
-		if r.Vector[9] != 0 {
-			bucketID |= 4
-		}
-		if r.Vector[10] != 0 {
-			bucketID |= 2
-		}
-		if r.Vector[11] != 0 {
-			bucketID |= 1
-		}
-
+		// Bucket baseado no valor da transação quantizado (vector[0] ∈ [0, 254])
+		// Shift de 4 bits → 16 buckets, cada um cobrindo ~6.25% do range de amount.
+		// Muito mais balanceado do que flags binárias (IsOnline/CardPresent/!isKnown).
+		bucketID := int(r.Vector[0]) >> 4
 		buckets[bucketID] = append(buckets[bucketID], r)
 	}
+
+	// Log de distribuição dos buckets para diagnóstico
+	var total int
+	for i := 0; i < NumBuckets; i++ {
+		total += len(buckets[i])
+	}
+	log.Printf("Total de vetores processados: %d", total)
+	log.Println("=== Distribuição dos Buckets (process) ===")
+	for i := 0; i < NumBuckets; i++ {
+		pct := 0.0
+		if total > 0 {
+			pct = float64(len(buckets[i])) / float64(total) * 100
+		}
+		// Faixa de amount: bucket i cobre amount quantizado [i*16, i*16+15]
+		// Equivalente a amount original [i*MaxAmount/16, (i+1)*MaxAmount/16)
+		log.Printf("  Bucket %2d (amount_q %3d–%3d): %7d vetores (%.1f%%)",
+			i, i*16, i*16+15, len(buckets[i]), pct)
+	}
+	log.Println("==========================================")
 
 	vecFiles, err := os.Create("files/vectors.bin")
 	if err != nil {
@@ -90,16 +104,14 @@ func main() {
 	defer bucketFiles.Close()
 
 	var offset uint32 = 0
-	for i := 0; i < 8; i++ {
+	for i := 0; i < NumBuckets; i++ {
 		count := uint32(len(buckets[i]))
-		
-		// Write header: 4 bytes offset, 4 bytes count
-		err := binary.Write(bucketFiles, binary.LittleEndian, offset)
-		if err != nil {
+
+		// Header: 4 bytes offset, 4 bytes count
+		if err := binary.Write(bucketFiles, binary.LittleEndian, offset); err != nil {
 			log.Fatal(err)
 		}
-		err = binary.Write(bucketFiles, binary.LittleEndian, count)
-		if err != nil {
+		if err := binary.Write(bucketFiles, binary.LittleEndian, count); err != nil {
 			log.Fatal(err)
 		}
 
@@ -110,5 +122,5 @@ func main() {
 		offset += count
 	}
 
-	log.Println("done")
+	log.Println("done — binários gerados com sucesso")
 }
