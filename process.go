@@ -9,7 +9,7 @@ import (
 	"rinha-de-backend-retr0lbb/utils"
 )
 
-// NumBuckets deve coincidir com o valor em src/kdtree.go
+// NumBuckets deve coincidir com o valor em src/kdtree.go.
 const NumBuckets = 16
 
 type Row struct {
@@ -36,7 +36,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	var buckets [NumBuckets][]Row
+	// Stage 1: carrega todos os vetores em memória e constrói histograma
+	// por valor individual de vector[0] (256 valores possíveis).
+	// Necessário antes de calcular os limites dos buckets.
+	var allRows []Row
+	var hist [256]uint32
 
 	for decoder.More() {
 		var row struct {
@@ -59,32 +63,104 @@ func main() {
 			r.Label = 0
 		}
 
-		// Bucket baseado no valor da transação quantizado (vector[0] ∈ [0, 254])
-		// Shift de 4 bits → 16 buckets, cada um cobrindo ~6.25% do range de amount.
-		// Muito mais balanceado do que flags binárias (IsOnline/CardPresent/!isKnown).
-		bucketID := int(r.Vector[0]) >> 4
-		buckets[bucketID] = append(buckets[bucketID], r)
+		allRows = append(allRows, r)
+		hist[r.Vector[0]]++
 	}
 
-	// Log de distribuição dos buckets para diagnóstico
-	var total int
-	for i := 0; i < NumBuckets; i++ {
-		total += len(buckets[i])
-	}
+	total := uint32(len(allRows))
 	log.Printf("Total de vetores processados: %d", total)
+
+	// Histograma detalhado de vector[0] para diagnóstico
+	log.Println("=== Histograma de vector[0] ===")
+	for v := 0; v < 256; v++ {
+		if hist[v] > 0 {
+			log.Printf("  v=%3d: %7d (%.2f%%)", v, hist[v], float64(hist[v])/float64(total)*100)
+		}
+	}
+	log.Println("================================")
+
+	// Stage 2: calcula o mapa de buckets de forma adaptativa.
+	//
+	// Algoritmo: percorre os 256 valores possíveis de vector[0] em ordem e
+	// acumula contagens. Quando o acumulado >= target por bucket, avança para
+	// o próximo bucket. O excedente é carregado para o próximo bucket (carry-over),
+	// garantindo que um único valor com muitos vetores distribui corretamente
+	// entre múltiplos buckets.
+	targetPerBucket := total / NumBuckets
+	if targetPerBucket == 0 {
+		targetPerBucket = 1
+	}
+
+	var bucketMap [256]uint8
+	currentBucket := uint8(0)
+	accumulated := uint32(0)
+
+	for v := 0; v < 256; v++ {
+		bucketMap[v] = currentBucket
+		accumulated += hist[v]
+		// Avança o bucket (possivelmente mais de uma vez) enquanto o
+		// acumulado supera o target e ainda há buckets disponíveis.
+		for currentBucket < NumBuckets-1 && accumulated >= targetPerBucket {
+			currentBucket++
+			accumulated -= targetPerBucket
+		}
+	}
+
+	// Log dos limites calculados
+	log.Println("=== Mapa de Buckets Calculado ===")
+	bucketRanges := [NumBuckets][2]int{}
+	for b := range NumBuckets {
+		bucketRanges[b] = [2]int{256, -1} // min, max
+	}
+	for v := 0; v < 256; v++ {
+		b := int(bucketMap[v])
+		if v < bucketRanges[b][0] {
+			bucketRanges[b][0] = v
+		}
+		if v > bucketRanges[b][1] {
+			bucketRanges[b][1] = v
+		}
+	}
+	for b := range NumBuckets {
+		if bucketRanges[b][1] >= 0 {
+			log.Printf("  Bucket %2d: v0 [%3d–%3d]", b, bucketRanges[b][0], bucketRanges[b][1])
+		} else {
+			log.Printf("  Bucket %2d: vazio", b)
+		}
+	}
+	log.Println("=================================")
+
+	// Salva o mapa de buckets (256 bytes) para ser carregado pelo servidor.
+	bucketMapFile, err := os.Create("files/bucket_map.bin")
+	if err != nil {
+		log.Fatal(err)
+	}
+	if _, err := bucketMapFile.Write(bucketMap[:]); err != nil {
+		log.Fatal(err)
+	}
+	bucketMapFile.Close()
+	log.Println("bucket_map.bin salvo com sucesso")
+
+	// Stage 3: distribui os vetores nos buckets usando o mapa calculado
+	var buckets [NumBuckets][]Row
+	for _, r := range allRows {
+		bid := bucketMap[r.Vector[0]]
+		buckets[bid] = append(buckets[bid], r)
+	}
+
+	// Log da distribuição resultante
 	log.Println("=== Distribuição dos Buckets (process) ===")
-	for i := 0; i < NumBuckets; i++ {
+	for i := range NumBuckets {
 		pct := 0.0
 		if total > 0 {
 			pct = float64(len(buckets[i])) / float64(total) * 100
 		}
-		// Faixa de amount: bucket i cobre amount quantizado [i*16, i*16+15]
-		// Equivalente a amount original [i*MaxAmount/16, (i+1)*MaxAmount/16)
-		log.Printf("  Bucket %2d (amount_q %3d–%3d): %7d vetores (%.1f%%)",
-			i, i*16, i*16+15, len(buckets[i]), pct)
+		log.Printf("  Bucket %2d (v0 [%3d–%3d]): %7d vetores (%.1f%%)",
+			i, bucketRanges[i][0], bucketRanges[i][1], len(buckets[i]), pct)
 	}
 	log.Println("==========================================")
 
+	// Escreve os arquivos binários
 	vecFiles, err := os.Create("files/vectors.bin")
 	if err != nil {
 		log.Fatal(err)
@@ -104,7 +180,7 @@ func main() {
 	defer bucketFiles.Close()
 
 	var offset uint32 = 0
-	for i := 0; i < NumBuckets; i++ {
+	for i := range NumBuckets {
 		count := uint32(len(buckets[i]))
 
 		// Header: 4 bytes offset, 4 bytes count
