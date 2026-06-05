@@ -1,6 +1,6 @@
 services:
   api1:
-    image: retr0lbb/rinha-backend-2026:v7
+    image: retr0lbb/rinha-backend-2026:v9
     platform: linux/amd64
     container_name: api1
     hostname: api1
@@ -8,7 +8,7 @@ services:
     cpus: "0.45"
 
   api2:
-    image: retr0lbb/rinha-backend-2026:v7
+    image: retr0lbb/rinha-backend-2026:v9
     platform: linux/amd64
     container_name: api2
     hostname: api2
