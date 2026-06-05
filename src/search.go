@@ -53,7 +53,30 @@ func openLargeFile(vectorFilePath string, labelFilePath string) error {
 	log.Printf("memoria vetores: %.2f MB", float64(len(VectorDataset))/(1024*1024))
 	log.Printf("memoria labels:  %.2f MB", float64(len(Labels))/(1024*1024))
 
+	// Pre-warming: força a leitura de 1 byte de cada página OS (4KB) para carregar na RAM
+	log.Println("Iniciando pre-warming do dataset...")
+	tempSum := uint64(0)
+	for i := 0; i < len(VectorDataset); i += 4096 {
+		tempSum += uint64(VectorDataset[i])
+	}
+	for i := 0; i < len(Labels); i += 4096 {
+		tempSum += uint64(Labels[i])
+	}
+	log.Printf("Pre-warming concluído (checksum de páginas: %d)", tempSum)
+
 	return nil
+}
+
+func releaseLargeFile() {
+	if VectorDataset != nil {
+		_ = VectorDataset.Unmap()
+		VectorDataset = nil
+	}
+	if Labels != nil {
+		_ = Labels.Unmap()
+		Labels = nil
+	}
+	log.Println("Arquivos binários desmapeados e memória liberada com sucesso")
 }
 
 func search(vector [14]uint8) (float32, bool) {
@@ -69,9 +92,8 @@ func search(vector [14]uint8) (float32, bool) {
 		return 0.0, false
 	}
 
-	// Bucket baseado no valor da transação quantizado.
-	// Deve ser idêntico ao cálculo em process.go.
-	bucketID := int(vector[0]) >> 4
+	// Bucket baseado no mapeamento adaptativo pré-calculado.
+	bucketID := int(BucketMap[vector[0]])
 
 	var minBaseDist uint32
 	if vector[5] == 255 {

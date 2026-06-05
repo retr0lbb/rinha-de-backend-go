@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"runtime"
+	"strconv"
 	"time"
 )
 
@@ -13,13 +14,11 @@ import (
 // Capacidade maior evita que o canal encha e force rejeições desnecessárias.
 // O select não-bloqueante retorna 503 imediatamente se estiver cheio,
 // em vez de deixar o handler preso enquanto o clock de timeout do cliente corre.
-var searchSem = make(chan struct{}, 64)
+var searchSem = make(chan struct{}, 32)
 
 func main() {
-	// GOMAXPROCS padrão: permite que I/O (aceitação de conexões, JSON) e
-	// CPU (busca KD-Tree) se sobreponham em goroutines separadas.
-	// O cgroup de 0.45 CPU limita o total de CPU consumida de qualquer forma.
-	runtime.GOMAXPROCS(2)
+	// Com cgroup de 0.45 CPU, limitar para 1 thread evita concorrência de CPU desnecessária.
+	runtime.GOMAXPROCS(1)
 
 	mux := http.NewServeMux()
 
@@ -38,10 +37,17 @@ func main() {
 		log.Fatalf("Erro ao carregar buckets: %v", err)
 	}
 
+	err = loadBucketMap("files/bucket_map.bin")
+	if err != nil {
+		log.Fatalf("Erro ao carregar bucket map: %v", err)
+	}
+
 	BuildKDTrees()
+	releaseLargeFile()
+	runtime.GC()
 
 	// Estimar footprint de memória da KD-Tree
-	kdTreeMB := float64(len(KDTreeNodes)*16) / (1024 * 1024)
+	kdTreeMB := float64(len(KDTreeNodes)*28) / (1024 * 1024)
 	log.Printf("KD-Tree: %d nós | footprint: %.2f MB", len(KDTreeNodes), kdTreeMB)
 	log.Println("Dataset carregado com sucesso!")
 
@@ -92,14 +98,19 @@ func handleAnalyze(w http.ResponseWriter, r *http.Request) {
 	vector := HandleVectorizePayload(req)
 	score, approved := search(vector)
 
-	res := ResponsePayload{
-		Approved:   approved,
-		FraudScore: score,
-	}
-
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(res)
+
+	var buf [64]byte
+	b := buf[:0]
+	if approved {
+		b = append(b, `{"approved":true,"fraud_score":`...)
+	} else {
+		b = append(b, `{"approved":false,"fraud_score":`...)
+	}
+	b = strconv.AppendFloat(b, float64(score), 'f', 1, 32)
+	b = append(b, '}')
+	w.Write(b)
 }
 
 // handleStats expõe métricas de diagnóstico em texto simples.

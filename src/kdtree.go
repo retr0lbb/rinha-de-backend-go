@@ -10,13 +10,10 @@ import (
 
 // NumBuckets define o número de partições do dataset.
 // Deve coincidir com o valor em process.go.
-// 16 buckets baseados no amount quantizado (vector[0] >> 4).
 const NumBuckets = 16
 
 // MaxKDVisited é o limite de nós visitados por busca na KD-Tree.
 // Controla o trade-off latência × precisão.
-// Valores menores = mais rápido, menos preciso.
-// Valores maiores = mais lento, mais preciso.
 const MaxKDVisited = 1500
 
 type BucketInfo struct {
@@ -25,17 +22,18 @@ type BucketInfo struct {
 }
 
 type KDNode struct {
-	VectorIdx uint32
-	Left      uint32
-	Right     uint32
-	SplitDim  uint8
-	SplitVal  uint8
-	_         uint16
+	Left     uint32
+	Right    uint32
+	SplitDim uint8
+	SplitVal uint8
+	Label    uint8
+	Vector   [14]uint8
 }
 
 var Buckets [NumBuckets]BucketInfo
 var KDTreeNodes []KDNode
 var KDTrees [NumBuckets]uint32
+var BucketMap [256]uint8
 
 func loadBuckets(bucketFilePath string) error {
 	file, err := os.Open(bucketFilePath)
@@ -59,6 +57,22 @@ func loadBuckets(bucketFilePath string) error {
 	return nil
 }
 
+func loadBucketMap(bucketMapFilePath string) error {
+	file, err := os.Open(bucketMapFilePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	_, err = file.Read(BucketMap[:])
+	if err != nil {
+		return err
+	}
+
+	log.Println("Bucket map carregado com sucesso")
+	return nil
+}
+
 func BuildKDTrees() {
 	KDTreeNodes = make([]KDNode, 0, TotalVectors)
 
@@ -69,8 +83,8 @@ func BuildKDTrees() {
 		if TotalVectors > 0 {
 			pct = float64(Buckets[i].Count) / float64(TotalVectors) * 100
 		}
-		log.Printf("  Bucket %2d (amount_q %3d–%3d): %7d vetores (%.1f%%)",
-			i, i*16, i*16+15, Buckets[i].Count, pct)
+		log.Printf("  Bucket %2d: %7d vetores (%.1f%%)",
+			i, Buckets[i].Count, pct)
 	}
 	log.Println("==========================================")
 
@@ -99,10 +113,15 @@ func buildFlatTree(indices []uint32, depth int) uint32 {
 
 	dim := uint8(depth % 14)
 
-	sort.Slice(indices, func(i, j int) bool {
+	sort.SliceStable(indices, func(i, j int) bool {
 		idx1 := indices[i] * VectorSize
 		idx2 := indices[j] * VectorSize
-		return VectorDataset[idx1+uint32(dim)] < VectorDataset[idx2+uint32(dim)]
+		v1 := VectorDataset[idx1+uint32(dim)]
+		v2 := VectorDataset[idx2+uint32(dim)]
+		if v1 == v2 {
+			return indices[i] < indices[j]
+		}
+		return v1 < v2
 	})
 
 	mid := len(indices) / 2
@@ -110,13 +129,15 @@ func buildFlatTree(indices []uint32, depth int) uint32 {
 	midVal := VectorDataset[midIdx*VectorSize+uint32(dim)]
 
 	nodeIdx := uint32(len(KDTreeNodes))
-	KDTreeNodes = append(KDTreeNodes, KDNode{
-		VectorIdx: midIdx,
+	node := KDNode{
 		Left:      math.MaxUint32,
 		Right:     math.MaxUint32,
 		SplitDim:  dim,
 		SplitVal:  midVal,
-	})
+		Label:     Labels[midIdx],
+	}
+	copy(node.Vector[:], VectorDataset[midIdx*VectorSize:(midIdx+1)*VectorSize])
+	KDTreeNodes = append(KDTreeNodes, node)
 
 	leftIdx := buildFlatTree(indices[:mid], depth+1)
 	rightIdx := buildFlatTree(indices[mid+1:], depth+1)
@@ -128,8 +149,7 @@ func buildFlatTree(indices []uint32, depth int) uint32 {
 }
 
 // SearchKDTree realiza busca k-NN na KD-Tree com poda por distância.
-// O parâmetro visited controla o limite de nós visitados (MaxKDVisited),
-// garantindo latência previsível mesmo em buckets grandes.
+// Utiliza os dados locais de vetor e label cacheados no nó.
 func SearchKDTree(nodeIdx uint32, query [14]uint8, topVectors *[5]uint32, topLabels *[5]uint8, minBaseDist uint32, visited *int) {
 	if nodeIdx == math.MaxUint32 || *visited >= MaxKDVisited {
 		return
@@ -137,23 +157,22 @@ func SearchKDTree(nodeIdx uint32, query [14]uint8, topVectors *[5]uint32, topLab
 	*visited++
 
 	node := &KDTreeNodes[nodeIdx]
-	offset := node.VectorIdx * VectorSize
 	worstDist := topVectors[4]
 	var dist uint32
 
 	// Dimensões 0–4 (sem sentinelas)
 	for j := range uint32(5) {
-		diff := int16(query[j]) - int16(VectorDataset[offset+j])
+		diff := int16(query[j]) - int16(node.Vector[j])
 		dist += uint32(diff * diff)
 	}
 
 	if dist+minBaseDist < worstDist {
 		// Dimensões 5–6 (sentinela 255 = dado ausente)
 		for j := uint32(5); j < 7; j++ {
-			if query[j] == 255 || VectorDataset[offset+j] == 255 {
+			if query[j] == 255 || node.Vector[j] == 255 {
 				dist += uint32(255 * 255)
 			} else {
-				diff := int16(query[j]) - int16(VectorDataset[offset+j])
+				diff := int16(query[j]) - int16(node.Vector[j])
 				dist += uint32(diff * diff)
 			}
 		}
@@ -161,12 +180,12 @@ func SearchKDTree(nodeIdx uint32, query [14]uint8, topVectors *[5]uint32, topLab
 		if dist < worstDist {
 			// Dimensões 7–13 (sem sentinelas)
 			for j := uint32(7); j < 14; j++ {
-				diff := int16(query[j]) - int16(VectorDataset[offset+j])
+				diff := int16(query[j]) - int16(node.Vector[j])
 				dist += uint32(diff * diff)
 			}
 
 			if dist < worstDist {
-				insertDislocated(topVectors, topLabels, dist, Labels[node.VectorIdx])
+				insertDislocated(topVectors, topLabels, dist, node.Label)
 				worstDist = topVectors[4]
 			}
 		}
@@ -203,3 +222,4 @@ func SearchKDTree(nodeIdx uint32, query [14]uint8, topVectors *[5]uint32, topLab
 		SearchKDTree(second, query, topVectors, topLabels, minBaseDist, visited)
 	}
 }
+

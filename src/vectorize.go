@@ -51,7 +51,7 @@ func HandleVectorizePayload(payload Payload) [14]uint8 {
 	}
 
 	// 3 & 4: Tempo
-	t, err := time.Parse(time.RFC3339, payload.Transaction.RequestedAt)
+	t, err := parseRFC3339Fast(payload.Transaction.RequestedAt)
 	if err == nil {
 		t = t.UTC()
 
@@ -64,10 +64,7 @@ func HandleVectorizePayload(payload Payload) [14]uint8 {
 		vetor[5] = utils.Quantize(-1)
 		vetor[6] = utils.Quantize(-1)
 	} else {
-		lastT, err := time.Parse(
-			time.RFC3339,
-			payload.LastTransaction.Timestamp,
-		)
+		lastT, err := parseRFC3339Fast(payload.LastTransaction.Timestamp)
 
 		if err == nil {
 			diff := t.Sub(lastT).Minutes()
@@ -130,3 +127,48 @@ func HandleVectorizePayload(payload Payload) [14]uint8 {
 
 	return vetor
 }
+
+func parseRFC3339Fast(s string) (time.Time, error) {
+	if len(s) < 19 {
+		return time.Parse(time.RFC3339, s)
+	}
+	// Validação básica de delimitadores
+	if s[4] != '-' || s[7] != '-' || s[10] != 'T' || s[13] != ':' || s[16] != ':' {
+		return time.Parse(time.RFC3339, s)
+	}
+	year := int(s[0]-'0')*1000 + int(s[1]-'0')*100 + int(s[2]-'0')*10 + int(s[3]-'0')
+	month := time.Month(int(s[5]-'0')*10 + int(s[6]-'0'))
+	day := int(s[8]-'0')*10 + int(s[9]-'0')
+	hour := int(s[11]-'0')*10 + int(s[12]-'0')
+	min := int(s[14]-'0')*10 + int(s[15]-'0')
+	sec := int(s[17]-'0')*10 + int(s[18]-'0')
+
+	loc := time.UTC
+	idx := 19
+	if idx < len(s) && s[idx] == '.' {
+		idx++
+		for idx < len(s) && s[idx] >= '0' && s[idx] <= '9' {
+			idx++
+		}
+	}
+	if idx < len(s) {
+		char := s[idx]
+		if char == '+' || char == '-' {
+			if len(s) >= idx+6 && s[idx+3] == ':' {
+				sign := 1
+				if char == '-' {
+					sign = -1
+				}
+				ohour := int(s[idx+1]-'0')*10 + int(s[idx+2]-'0')
+				omin := int(s[idx+4]-'0')*10 + int(s[idx+5]-'0')
+				offset := sign * (ohour*3600 + omin*60)
+				loc = time.FixedZone("", offset)
+			} else {
+				return time.Parse(time.RFC3339, s)
+			}
+		}
+	}
+
+	return time.Date(year, month, day, hour, min, sec, 0, loc), nil
+}
+
