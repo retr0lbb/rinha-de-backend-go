@@ -14,7 +14,7 @@ const NumBuckets = 16
 
 // MaxKDVisited é o limite de nós visitados por busca na KD-Tree.
 // Controla o trade-off latência × precisão.
-const MaxKDVisited = 1500
+const MaxKDVisited = 1000
 
 type BucketInfo struct {
 	Offset uint32
@@ -130,11 +130,11 @@ func buildFlatTree(indices []uint32, depth int) uint32 {
 
 	nodeIdx := uint32(len(KDTreeNodes))
 	node := KDNode{
-		Left:      math.MaxUint32,
-		Right:     math.MaxUint32,
-		SplitDim:  dim,
-		SplitVal:  midVal,
-		Label:     Labels[midIdx],
+		Left:     math.MaxUint32,
+		Right:    math.MaxUint32,
+		SplitDim: dim,
+		SplitVal: midVal,
+		Label:    Labels[midIdx],
 	}
 	copy(node.Vector[:], VectorDataset[midIdx*VectorSize:(midIdx+1)*VectorSize])
 	KDTreeNodes = append(KDTreeNodes, node)
@@ -222,4 +222,3 @@ func SearchKDTree(nodeIdx uint32, query [14]uint8, topVectors *[5]uint32, topLab
 		SearchKDTree(second, query, topVectors, topLabels, minBaseDist, visited)
 	}
 }
-
